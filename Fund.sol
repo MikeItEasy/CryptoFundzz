@@ -1,15 +1,15 @@
 // File: contracts/Fund.sol
-pragma solidity ^0.8.10;
+pragma solidity ^0.8.7;
 
-import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Burnable.sol";
+
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
+
+// This is the main contract that will track all existing funds 
 contract Fund is Ownable, Pausable {
     using SafeMath for uint256;
 
@@ -22,13 +22,24 @@ contract Fund is Ownable, Pausable {
 
     IERC20 public immutable token; // BUSD token
     IERC20 public immutable receiptToken; // Fundies token
+    address[] public authorisedTokens;
 
     mapping(address => UserInfo) public userInfo;
 
     uint256 public totalShares;
     uint256 public lastHarvestedTime;
+    
+    //This address can manage fees and pause contract. It should probably be the creator only
     address public admin;
+    
+    //This address can retrieve the token sent directly to the contract.
+    //Tokens should not be sent directly to the contract..
     address public treasury;
+    
+    //This is the fund manager!
+    address public manager;
+    
+    string  public name;
 
     uint256 public constant MAX_PERFORMANCE_FEE = 500; // 5%
     uint256 public constant MAX_CALL_FEE = 100; // 1%
@@ -53,18 +64,21 @@ contract Fund is Ownable, Pausable {
      * @param _treasury: address of the treasury (collects fees)
      */
     constructor(
+        string memory _name,
         IERC20 _token,
+        address[] memory _authorisedTokens,
         IERC20 _receiptToken,
         address _admin,
+        address _manager,
         address _treasury
     ) public {
+        name = _name;
         token = _token;
+        authorisedTokens = _authorisedTokens;
         receiptToken = _receiptToken;
         admin = _admin;
+        manager = _manager;
         treasury = _treasury;
-
-        // Infinite approve
-        //IERC20(_token).safeApprove(address(_masterchef), uint256(-1));
     }
 
     /**
@@ -83,9 +97,18 @@ contract Fund is Ownable, Pausable {
         require(msg.sender == tx.origin, "proxy contract not allowed");
         _;
     }
+    
+        /**
+     * @notice Checks if the msg.sender is the fund manager
+     */
+    modifier onlyManager() {
+        require(msg.sender == manager, "Only manager can do that!");
+        _;
+    }
+
 
     /**
-     * @notice Deposits funds into the Cake Vault
+     * @notice Deposits funds into a Fund
      * @dev Only possible when contract not paused.
      * @param _amount: number of tokens to deposit (in CAKE)
      */
@@ -130,14 +153,7 @@ contract Fund is Ownable, Pausable {
         admin = _admin;
     }
 
-    /**
-     * @notice Sets treasury address
-     * @dev Only callable by the contract owner.
-     */
-    function setTreasury(address _treasury) external onlyOwner {
-        require(_treasury != address(0), "Cannot be zero address");
-        treasury = _treasury;
-    }
+  
 
     /**
      * @notice Sets performance fee
@@ -178,7 +194,6 @@ contract Fund is Ownable, Pausable {
         withdrawFeePeriod = _withdrawFeePeriod;
     }
 
-  
 
     /**
      * @notice Withdraw unexpected tokens sent to the Cake Vault
@@ -278,7 +293,6 @@ contract Fund is Ownable, Pausable {
         return token.balanceOf(address(this));
     }
 
-  
     /**
      * @notice Checks if address is a contract
      * @dev It prevents contract from being targetted
